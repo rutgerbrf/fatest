@@ -10,7 +10,7 @@ import Data.List (foldl', intercalate)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-import System.Environment
+import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
 import Text.Lare
 
@@ -477,8 +477,9 @@ instance (Show s, Show a, Ord s, Ord a) => Show (DFA s a) where
 main :: IO ()
 main = do
   args <- getArgs
+  progName <- getProgName
   when (length args /= 2) $ do
-    putStrLn "Expected exactly two arguments: fatest <regex> <format>"
+    putStrLn $ "Expected exactly two arguments: " ++ progName ++ " <regex> <format>"
     putStrLn "Where <format> is one of [re, nfal, nfa, dfa, mdfa]"
     exitFailure
 
