@@ -62,7 +62,8 @@ nextPartition dfa part =
         Set.filter
           ( \q' ->
               forAll (dfaA dfa) $ \a ->
-                partEqc part (dfaD dfa Map.! (q, a)) == partEqc part (dfaD dfa Map.! (q', a))
+                partEqc part (dfaD dfa Map.! (q, a))
+                  == partEqc part (dfaD dfa Map.! (q', a))
           )
           $ partEqc part q
     }
@@ -95,7 +96,9 @@ minimizeDFA dfa =
           dfaF = Set.map (partEqc part) $ dfaF dfa,
           dfaD =
             Map.fromSet
-              ( \(p, a) -> let p' = head (Set.elems p) in partEqc part $ dfaD dfa Map.! (p', a)
+              ( \(p, a) ->
+                  let p' = head (Set.elems p)
+                   in partEqc part $ dfaD dfa Map.! (p', a)
               )
               $ Set.cartesianProduct q (dfaA dfa)
         }
@@ -125,18 +128,15 @@ faReachable fa from = faMultiStep fa froms froms
   where
     froms = Set.singleton from
 
-dfaRemoveUnreached :: (Ord s, Ord a) => DFA s a -> DFA s a
-dfaRemoveUnreached dfa =
-  dfa
-    { dfaQ = reached,
-      dfaF = dfaF dfa `Set.intersection` reached
-    }
-  where
-    reached = faReachable (faFromDFA dfa) (dfaI dfa)
-
 toDFA :: (Ord s, Ord a) => NFA s a -> DFA (Set.Set s) a
 toDFA nfa =
-  let d (q, a) = Set.unions $ Set.map (\q' -> fromMaybe Set.empty $ nfaD nfa Map.!? (q', a)) q
+  let d (q, a) =
+        Set.unions $
+          Set.map
+            ( \q' ->
+                fromMaybe Set.empty $ nfaD nfa Map.!? (q', a)
+            )
+            q
       i = Set.singleton $ nfaI nfa
       q = faReachable (FA {faA = nfaA nfa, faD = d}) i
       f = Set.filter (\h -> not $ Set.null $ h `Set.intersection` nfaF nfa) q
@@ -231,7 +231,11 @@ execIntGenerator ig = snd $ runIntGenerator ig 0
 nfalDefaultD :: (Ord s, Ord a) => Set.Set s -> Map.Map (s, Maybe a) (Set.Set s)
 nfalDefaultD q = Map.fromSet (Set.singleton . fst) $ Set.map (,Nothing) q
 
-withNFALDefaultD :: (Ord s, Ord a) => Set.Set s -> [Map.Map (s, Maybe a) (Set.Set s)] -> Map.Map (s, Maybe a) (Set.Set s)
+withNFALDefaultD ::
+  (Ord s, Ord a) =>
+  Set.Set s ->
+  [Map.Map (s, Maybe a) (Set.Set s)] ->
+  Map.Map (s, Maybe a) (Set.Set s)
 withNFALDefaultD q d = Map.unionsWith Set.union (nfalDefaultD q : d)
 
 toNFAL :: Ord a => RE a -> NFAL Int a
@@ -341,7 +345,10 @@ toNFAL_ (REK a) = do
         nfalD =
           withNFALDefaultD
             q
-            [ Map.fromList [((f1, Nothing), Set.singleton q0), ((q0, Nothing), Set.singleton q1)],
+            [ Map.fromList
+                [ ((f1, Nothing), Set.singleton q0),
+                  ((q0, Nothing), Set.singleton q1)
+                ],
               nfalD m1
             ]
       }
@@ -363,7 +370,11 @@ dfaOutgoing :: (Ord s, Ord a) => DFA s a -> s -> Map.Map s (Set.Set a)
 dfaOutgoing dfa q =
   Set.foldr'
     ( \a ->
-        Map.alter (Just . maybe (Set.singleton a) (Set.insert a)) (dfaD dfa Map.! (q, a))
+        let key = dfaD dfa Map.! (q, a)
+            -- value needs to be added to the set at this key,
+            -- we do a set union when this key is already in the map.
+            value = Set.singleton a
+         in Map.insertWith Set.union key value
     )
     Map.empty
     $ dfaA dfa
@@ -375,8 +386,7 @@ nfalOutgoing nfal q =
         case nfalD nfal Map.!? (q, a) of
           Just statesForChar ->
             Set.foldr'
-              ( Map.alter (Just . maybe (Set.singleton a) (Set.insert a))
-              )
+              (\q -> Map.insertWith Set.union q $ Set.singleton a)
               total
               statesForChar
           Nothing ->
@@ -392,8 +402,7 @@ nfaOutgoing nfa q =
         case nfaD nfa Map.!? (q, a) of
           Just statesForChar ->
             Set.foldr'
-              ( Map.alter (Just . maybe (Set.singleton a) (Set.insert a))
-              )
+              (\q -> Map.insertWith Set.union q $ Set.singleton a)
               total
               statesForChar
           Nothing ->
