@@ -1,5 +1,4 @@
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TupleSections #-}
 
 module Main where
 
@@ -11,6 +10,8 @@ import Control.Monad.Writer.Lazy
     forM_,
     when,
   )
+import Control.Monad.State.Lazy
+    ( forM_, when, MonadState(put, get), evalState, State )
 import Data.Bifunctor (first)
 import Data.List (foldl', intercalate)
 import qualified Data.Map as Map
@@ -19,6 +20,7 @@ import qualified Data.Set as Set
 import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
 import Text.Lare (RE (..), parseStr)
+import Data.Functor.Identity (Identity)
 
 data DFA s a = DFA
   { dfaA :: Set.Set a,
@@ -209,31 +211,16 @@ toNFA nfal =
             (nfalQ nfal)
     }
 
-newtype IntGenerator a = IntGenerator {runIntGenerator :: Int -> (Int, a)}
-
-updateSnd :: (b -> c) -> (a, b) -> (a, c)
-updateSnd f (x, y) = (x, f y)
-
-instance Functor IntGenerator where
-  fmap f a = IntGenerator $ updateSnd f . runIntGenerator a
-
-instance Applicative IntGenerator where
-  pure a = IntGenerator (,a)
-  liftA2 f ia ib = IntGenerator $ \x ->
-    let (x', a) = runIntGenerator ia x
-        (x'', b) = runIntGenerator ib x'
-     in (x'', f a b)
-
-instance Monad IntGenerator where
-  (>>=) ig f = IntGenerator $ \x ->
-    let (x', a) = runIntGenerator ig x
-     in runIntGenerator (f a) x'
+type IntGenerator = State Int
 
 nextInt :: IntGenerator Int
-nextInt = IntGenerator $ \x -> (x + 1, x)
+nextInt = do
+  current <- get 
+  put $ current + 1
+  return current
 
 execIntGenerator :: IntGenerator a -> a
-execIntGenerator ig = snd $ runIntGenerator ig 0
+execIntGenerator = flip evalState 0
 
 toNFAL :: Ord a => RE a -> NFAL Int a
 toNFAL = execIntGenerator . toNFAL_
@@ -423,12 +410,10 @@ instance (Show s, Show a, Ord s, Ord a) => Show (NFAL s a) where
         tell $ show q'
         tell " [label="
         tell $ show $ intercalate ", " $ map show $ Set.toList $ outgoing Map.! q'
-        tell "]"
-        tell ";\n"
+        tell "];\n"
     tell "  start -> "
     tell $ show (nfalI nfal)
-    tell ";\n"
-    tell "}"
+    tell ";\n}"
 
 instance (Show s, Show a, Ord s, Ord a) => Show (NFA s a) where
   show nfa = execWriter $ do
@@ -449,12 +434,10 @@ instance (Show s, Show a, Ord s, Ord a) => Show (NFA s a) where
         tell $ show q'
         tell " [label="
         tell $ show $ intercalate ", " $ map show $ Set.toList $ outgoing Map.! q'
-        tell "]"
-        tell ";\n"
+        tell "];\n"
     tell "  start -> "
     tell $ show (nfaI nfa)
-    tell ";\n"
-    tell "}"
+    tell ";\n}"
 
 instance (Show s, Show a, Ord s, Ord a) => Show (DFA s a) where
   show dfa = execWriter $ do
@@ -475,12 +458,10 @@ instance (Show s, Show a, Ord s, Ord a) => Show (DFA s a) where
         tell $ show q'
         tell " [label="
         tell $ show $ intercalate ", " $ map show $ Set.toList $ outgoing Map.! q'
-        tell "]"
-        tell ";\n"
+        tell "];\n"
     tell "  start -> "
     tell $ show (dfaI dfa)
-    tell ";\n"
-    tell "}"
+    tell ";\n}"
 
 main :: IO ()
 main = do
