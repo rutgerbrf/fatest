@@ -4,7 +4,7 @@ module Text.Lare (RE (..), parseStr) where
 
 import Control.Applicative (Alternative (empty, many, (<|>)))
 import Control.Monad (MonadPlus (..))
-import Data.Char (isAlphaNum)
+import Data.Char (isAlpha)
 
 newtype Parser a = Parser {parse :: String -> [(a, String)]}
 
@@ -83,8 +83,8 @@ p `chainl1` op = do
 char :: Char -> Parser Char
 char c = satisfy (c ==)
 
-alnum :: Parser (RE Char)
-alnum = REA <$> satisfy isAlphaNum
+alpha :: Parser (RE Char)
+alpha = REA <$> satisfy isAlpha
 
 token :: Parser a -> Parser a
 token p = do
@@ -138,7 +138,7 @@ quantification =
     <|> value
 
 value :: Parser (RE Char)
-value = alnum <|> zero <|> one <|> parens expr
+value = alpha <|> zero <|> one <|> parens expr
 
 infixOp :: String -> (a -> a -> a) -> Parser (a -> a -> a)
 infixOp x f = reserved x >> return f
