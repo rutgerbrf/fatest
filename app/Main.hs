@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TupleSections #-}
 
 module Main where
@@ -5,6 +6,11 @@ module Main where
 import Control.Applicative (Applicative (..))
 import Control.Monad (Monad (..))
 import Control.Monad.Writer.Lazy
+  ( MonadWriter (tell),
+    execWriter,
+    forM_,
+    when,
+  )
 import Data.Bifunctor (first)
 import Data.List (foldl', intercalate)
 import qualified Data.Map as Map
@@ -12,7 +18,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
-import Text.Lare
+import Text.Lare (RE (..), parseStr)
 
 data DFA s a = DFA
   { dfaA :: Set.Set a,
@@ -71,11 +77,11 @@ partitionFinal :: Ord s => DFA s a -> Partition s
 partitionFinal dfa =
   let nonAccepting = dfaQ dfa Set.\\ dfaF dfa
       accepting = dfaF dfa
-      eqc q = case () of
-        ()
-          | q `Set.member` accepting -> accepting
-          | q `Set.member` nonAccepting -> nonAccepting
-          | otherwise -> undefined
+      eqc q =
+        if
+            | q `Set.member` accepting -> accepting
+            | q `Set.member` nonAccepting -> nonAccepting
+            | otherwise -> undefined
    in Partition {partSet = dfaQ dfa, partEqc = eqc}
 
 minimizeDFA :: (Ord s, Ord a, Show s) => DFA s a -> DFA (Set.Set s) a

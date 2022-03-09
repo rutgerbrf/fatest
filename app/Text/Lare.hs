@@ -2,9 +2,9 @@
 
 module Text.Lare (RE (..), parseStr) where
 
-import Control.Applicative
-import Control.Monad
-import Data.Char
+import Control.Applicative (Alternative (empty, many, (<|>)))
+import Control.Monad (MonadPlus (..))
+import Data.Char (isAlpha)
 
 newtype Parser a = Parser {parse :: String -> [(a, String)]}
 
