@@ -4,7 +4,7 @@ module Text.Lare (RE (..), parseStr) where
 
 import Control.Applicative (Alternative (empty, many, (<|>)))
 import Control.Monad (MonadPlus (..))
-import Data.Char (isAlpha)
+import Data.Char (isAlphaNum)
 
 newtype Parser a = Parser {parse :: String -> [(a, String)]}
 
@@ -67,9 +67,6 @@ satisfy p =
 oneOf :: [Char] -> Parser Char
 oneOf s = satisfy (`elem` s)
 
-chainl :: Parser a -> Parser (a -> a -> a) -> a -> Parser a
-chainl p op a = (p `chainl1` op) <|> return a
-
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 p `chainl1` op = do
   a <- p
@@ -86,8 +83,8 @@ p `chainl1` op = do
 char :: Char -> Parser Char
 char c = satisfy (c ==)
 
-alph :: Parser (RE Char)
-alph = REA <$> satisfy isAlpha
+alnum :: Parser (RE Char)
+alnum = REA <$> satisfy isAlphaNum
 
 token :: Parser a -> Parser a
 token p = do
@@ -141,7 +138,7 @@ quantification =
     <|> value
 
 value :: Parser (RE Char)
-value = alph <|> zero <|> one <|> parens expr
+value = alnum <|> zero <|> one <|> parens expr
 
 infixOp :: String -> (a -> a -> a) -> Parser (a -> a -> a)
 infixOp x f = reserved x >> return f
@@ -150,7 +147,9 @@ choiceOp :: Parser (RE Char -> RE Char -> RE Char)
 choiceOp = infixOp "+" REC
 
 mulOp :: Parser (RE Char -> RE Char -> RE Char)
-mulOp = infixOp "" RES
+mulOp = spaces >> return RES
+-- We don't have an explicit multiplication sign,
+-- but spaces are allowed inbetween characters.
 
 parseStr :: String -> Either String (RE Char)
 parseStr = runParser expr
