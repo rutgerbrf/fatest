@@ -157,7 +157,14 @@ data NFAL s a = NFAL
   }
 
 lStep :: (Ord s, Ord a) => NFAL s a -> Set.Set s -> Set.Set s
-lStep nfal = Set.unions . Set.map (\q -> nfalD nfal Map.! (q, Nothing))
+lStep nfal =
+  Set.unions
+    . Set.map
+      ( \q ->
+          let canReach = fromMaybe Set.empty $ nfalD nfal Map.!? (q, Nothing)
+           in Set.insert q canReach
+          -- q can always reach it self with a lambda transition
+      )
 
 lMultiStep :: (Ord s, Ord a) => NFAL s a -> Set.Set s -> Set.Set s -> Set.Set s
 lMultiStep nfal ss frontier =
@@ -228,16 +235,6 @@ nextInt = IntGenerator $ \x -> (x + 1, x)
 execIntGenerator :: IntGenerator a -> a
 execIntGenerator ig = snd $ runIntGenerator ig 0
 
-nfalDefaultD :: (Ord s, Ord a) => Set.Set s -> Map.Map (s, Maybe a) (Set.Set s)
-nfalDefaultD q = Map.fromSet (Set.singleton . fst) $ Set.map (,Nothing) q
-
-withNFALDefaultD ::
-  (Ord s, Ord a) =>
-  Set.Set s ->
-  [Map.Map (s, Maybe a) (Set.Set s)] ->
-  Map.Map (s, Maybe a) (Set.Set s)
-withNFALDefaultD q d = Map.unionsWith Set.union (nfalDefaultD q : d)
-
 toNFAL :: Ord a => RE a -> NFAL Int a
 toNFAL = execIntGenerator . toNFAL_
 
@@ -251,7 +248,7 @@ toNFAL_ RE0 = do
         nfalQ = q,
         nfalI = q0,
         nfalF = Set.empty,
-        nfalD = nfalDefaultD q
+        nfalD = Map.empty
       }
 toNFAL_ RE1 = do
   q0 <- nextInt
@@ -262,7 +259,7 @@ toNFAL_ RE1 = do
         nfalQ = q,
         nfalI = q0,
         nfalF = q,
-        nfalD = nfalDefaultD q
+        nfalD = Map.empty
       }
 toNFAL_ (REA a) = do
   q0 <- nextInt
@@ -274,11 +271,7 @@ toNFAL_ (REA a) = do
         nfalQ = q,
         nfalI = q0,
         nfalF = Set.singleton f,
-        nfalD =
-          withNFALDefaultD
-            q
-            [ Map.fromList [((q0, Just a), Set.singleton f)]
-            ]
+        nfalD = Map.fromList [((q0, Just a), Set.singleton f)]
       }
 toNFAL_ (REC a b) = do
   m1 <- toNFAL_ a
@@ -297,8 +290,8 @@ toNFAL_ (REC a b) = do
         nfalI = q0,
         nfalF = Set.singleton f,
         nfalD =
-          withNFALDefaultD
-            q
+          Map.unionsWith
+            Set.union
             [ Map.fromList
                 [ ((q0, Nothing), Set.fromList [q1, q2]),
                   ((f1, Nothing), Set.singleton f),
@@ -323,8 +316,8 @@ toNFAL_ (RES a b) = do
         nfalI = q1,
         nfalF = Set.singleton f2,
         nfalD =
-          withNFALDefaultD
-            q
+          Map.unionsWith
+            Set.union
             [ Map.fromList [((f1, Nothing), Set.singleton q2)],
               nfalD m1,
               nfalD m2
@@ -343,14 +336,14 @@ toNFAL_ (REK a) = do
         nfalI = q0,
         nfalF = Set.singleton q0,
         nfalD =
-          withNFALDefaultD
-            q
-            [ Map.fromList
+          Map.unionWith
+            Set.union
+            ( Map.fromList
                 [ ((f1, Nothing), Set.singleton q0),
                   ((q0, Nothing), Set.singleton q1)
-                ],
-              nfalD m1
-            ]
+                ]
+            )
+            (nfalD m1)
       }
 
 renumerateDFA :: (Ord s, Ord a) => DFA s a -> DFA Int a
