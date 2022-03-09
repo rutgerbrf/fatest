@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Text.Lare (RE (..), parseStr) where
 
 import Control.Applicative
@@ -14,10 +16,9 @@ runParser m s =
     _ -> Left "parser error"
 
 item :: Parser Char
-item = Parser $ \s ->
-  case s of
-    [] -> []
-    (c : cs) -> [(c, cs)]
+item = Parser $ \case
+  [] -> []
+  (c : cs) -> [(c, cs)]
 
 bind :: Parser a -> (a -> Parser b) -> Parser b
 bind p f = Parser $ \s -> concatMap (\(a, s') -> parse (f a) s') $ parse p s
@@ -64,7 +65,7 @@ satisfy p =
       else failure
 
 oneOf :: [Char] -> Parser Char
-oneOf s = satisfy (flip elem s)
+oneOf s = satisfy (`elem` s)
 
 chainl :: Parser a -> Parser (a -> a -> a) -> a -> Parser a
 chainl p op a = (p `chainl1` op) <|> return a

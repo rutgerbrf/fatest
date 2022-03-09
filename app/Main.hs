@@ -1,8 +1,11 @@
+{-# LANGUAGE TupleSections #-}
+
 module Main where
 
 import Control.Applicative (Applicative (..))
 import Control.Monad (Monad (..))
 import Control.Monad.Writer.Lazy
+import Data.Bifunctor (first)
 import Data.List (foldl', intercalate)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -33,7 +36,7 @@ data Partition a = Partition
   }
 
 resolvePartition :: Ord a => Partition a -> Set.Set (Set.Set a)
-resolvePartition part = Set.map (\x -> partEqc part x) $ partSet part
+resolvePartition part = Set.map (partEqc part) $ partSet part
 
 instance (Ord a, Show a) => Show (Partition a) where
   show = show . resolvePartition
@@ -62,7 +65,7 @@ instance Ord a => Eq (Partition a) where
   p1 == p2 = resolvePartition p1 == resolvePartition p2
 
 untilEq :: Eq a => (a -> a) -> a -> a
-untilEq m a = snd $ until (\(x, y) -> x == y) (\(_, y) -> (y, m y)) (a, m a)
+untilEq m a = snd $ until (uncurry (==)) (\(_, y) -> (y, m y)) (a, m a)
 
 partitionFinal :: Ord s => DFA s a -> Partition s
 partitionFinal dfa =
@@ -86,7 +89,7 @@ minimizeDFA dfa =
           dfaF = Set.map (partEqc part) $ dfaF dfa,
           dfaD =
             Map.fromSet
-              ( \(p, a) -> let p' = Set.elems p !! 0 in partEqc part $ dfaD dfa Map.! (p', a)
+              ( \(p, a) -> let p' = head (Set.elems p) in partEqc part $ dfaD dfa Map.! (p', a)
               )
               $ Set.cartesianProduct q (dfaA dfa)
         }
@@ -127,7 +130,7 @@ dfaRemoveUnreached dfa =
 
 toDFA :: (Ord s, Ord a) => NFA s a -> DFA (Set.Set s) a
 toDFA nfa =
-  let d = \(q, a) -> Set.unions $ Set.map (\q' -> fromMaybe (Set.empty) $ nfaD nfa Map.!? (q', a)) q
+  let d (q, a) = Set.unions $ Set.map (\q' -> fromMaybe Set.empty $ nfaD nfa Map.!? (q', a)) q
       i = Set.singleton $ nfaI nfa
       q = faReachable (FA {faA = nfaA nfa, faD = d}) i
       f = Set.filter (\h -> not $ Set.null $ h `Set.intersection` nfaF nfa) q
@@ -164,55 +167,45 @@ lClosure nfal s = lMultiStep nfal ss ss
 
 toNFA :: (Show s, Show a, Ord s, Ord a) => NFAL s a -> NFA s a
 toNFA nfal =
-  let outgoing = Map.keysSet (nfalD nfal)
-      outgoing' =
-        Set.foldl'
-          ( \out' (q, a) ->
-              case a of
-                Just a' -> Set.insert (q, a') out'
-                Nothing -> out'
+  NFA
+    { nfaA = nfalA nfal,
+      nfaQ = nfalQ nfal,
+      nfaI = nfalI nfal,
+      nfaF =
+        Set.filter
+          ( \q ->
+              not $ Set.null $ lClosure nfal q `Set.intersection` nfalF nfal
           )
-          Set.empty
-          outgoing
-   in NFA
-        { nfaA = nfalA nfal,
-          nfaQ = nfalQ nfal,
-          nfaI = nfalI nfal,
-          nfaF =
-            Set.filter
-              ( \q ->
-                  not $ Set.null $ lClosure nfal q `Set.intersection` (nfalF nfal)
-              )
-              $ nfalQ nfal,
-          nfaD =
-            Map.unionsWith Set.union $
-              Set.map
-                ( \q ->
-                    let reachableFromQ = lClosure nfal q
-                     in Map.foldrWithKey'
-                          ( \(q', a) q'' total ->
-                              if q' `Set.member` reachableFromQ
-                                then case a of
-                                  Just a' -> Map.insertWith Set.union (q, a') q'' total
-                                  Nothing -> total
-                                else total
-                          )
-                          Map.empty
-                          (nfalD nfal)
-                )
-                (nfalQ nfal)
-        }
+          $ nfalQ nfal,
+      nfaD =
+        Map.unionsWith Set.union $
+          Set.map
+            ( \q ->
+                let reachableFromQ = lClosure nfal q
+                 in Map.foldrWithKey'
+                      ( \(q', a) q'' total ->
+                          if q' `Set.member` reachableFromQ
+                            then case a of
+                              Just a' -> Map.insertWith Set.union (q, a') q'' total
+                              Nothing -> total
+                            else total
+                      )
+                      Map.empty
+                      (nfalD nfal)
+            )
+            (nfalQ nfal)
+    }
 
-data IntGenerator a = IntGenerator {runIntGenerator :: Int -> (Int, a)}
+newtype IntGenerator a = IntGenerator {runIntGenerator :: Int -> (Int, a)}
 
 updateSnd :: (b -> c) -> (a, b) -> (a, c)
 updateSnd f (x, y) = (x, f y)
 
 instance Functor IntGenerator where
-  fmap f a = IntGenerator $ (updateSnd f) . (runIntGenerator a)
+  fmap f a = IntGenerator $ updateSnd f . runIntGenerator a
 
 instance Applicative IntGenerator where
-  pure a = IntGenerator $ \x -> (x, a)
+  pure a = IntGenerator (,a)
   liftA2 f ia ib = IntGenerator $ \x ->
     let (x', a) = runIntGenerator ia x
         (x'', b) = runIntGenerator ib x'
@@ -230,7 +223,7 @@ execIntGenerator :: IntGenerator a -> a
 execIntGenerator ig = snd $ runIntGenerator ig 0
 
 nfalDefaultD :: (Ord s, Ord a) => Set.Set s -> Map.Map (s, Maybe a) (Set.Set s)
-nfalDefaultD q = Map.fromSet (Set.singleton . fst) $ Set.map (\p -> (p, Nothing)) $ q
+nfalDefaultD q = Map.fromSet (Set.singleton . fst) $ Set.map (,Nothing) q
 
 withNFALDefaultD :: (Ord s, Ord a) => Set.Set s -> [Map.Map (s, Maybe a) (Set.Set s)] -> Map.Map (s, Maybe a) (Set.Set s)
 withNFALDefaultD q d = Map.unionsWith Set.union (nfalDefaultD q : d)
@@ -284,12 +277,12 @@ toNFAL_ (REC a b) = do
   f <- nextInt
   let q1 = nfalI m1
   let q2 = nfalI m2
-  let f1 = Set.toList (nfalF m1) !! 0
-  let f2 = Set.toList (nfalF m2) !! 0
-  let q = Set.unions [(nfalQ m1), (nfalQ m2), Set.fromList [q0, f]]
+  let f1 = head $ Set.toList $ nfalF m1
+  let f2 = head $ Set.toList $ nfalF m2
+  let q = Set.unions [nfalQ m1, nfalQ m2, Set.fromList [q0, f]]
   pure $
     NFAL
-      { nfalA = (nfalA m1) `Set.union` (nfalA m2),
+      { nfalA = nfalA m1 `Set.union` nfalA m2,
         nfalQ = q,
         nfalI = q0,
         nfalF = Set.singleton f,
@@ -310,12 +303,12 @@ toNFAL_ (RES a b) = do
   m2 <- toNFAL_ b
   let q1 = nfalI m1
   let q2 = nfalI m2
-  let f1 = Set.toList (nfalF m1) !! 0
-  let f2 = Set.toList (nfalF m2) !! 0
-  let q = (nfalQ m1) `Set.union` (nfalQ m2)
+  let f1 = head $ Set.toList $ nfalF m1
+  let f2 = head $ Set.toList $ nfalF m2
+  let q = nfalQ m1 `Set.union` nfalQ m2
   pure $
     NFAL
-      { nfalA = (nfalA m1) `Set.union` (nfalA m2),
+      { nfalA = nfalA m1 `Set.union` nfalA m2,
         nfalQ = q,
         nfalI = q1,
         nfalF = Set.singleton f2,
@@ -331,7 +324,7 @@ toNFAL_ (REK a) = do
   m1 <- toNFAL_ a
   q0 <- nextInt
   let q1 = nfalI m1
-  let f1 = Set.toList (nfalF m1) !! 0
+  let f1 = head $ Set.toList $ nfalF m1
   let q = Set.insert q0 $ nfalQ m1
   pure $
     NFAL
@@ -357,7 +350,7 @@ renumerateDFA dfa =
           dfaQ = Set.map numberOf $ dfaQ dfa,
           dfaI = mapping Map.! dfaI dfa,
           dfaF = Set.map numberOf $ dfaF dfa,
-          dfaD = Map.map numberOf $ Map.mapKeys (\(q, a) -> (numberOf q, a)) (dfaD dfa)
+          dfaD = Map.map numberOf $ Map.mapKeys (first numberOf) (dfaD dfa)
         }
 
 dfaOutgoing :: (Ord s, Ord a) => DFA s a -> s -> Map.Map s (Set.Set a)
@@ -373,7 +366,7 @@ nfalOutgoing :: (Ord s, Ord a) => NFAL s a -> s -> Map.Map s (Set.Set (Maybe a))
 nfalOutgoing nfal q =
   Set.foldr'
     ( \a total ->
-        case (nfalD nfal Map.!? (q, a)) of
+        case nfalD nfal Map.!? (q, a) of
           Just statesForChar ->
             Set.foldr'
               ( Map.alter (Just . maybe (Set.singleton a) (Set.insert a))
@@ -390,7 +383,7 @@ nfaOutgoing :: (Ord s, Ord a) => NFA s a -> s -> Map.Map s (Set.Set a)
 nfaOutgoing nfa q =
   Set.foldr'
     ( \a total ->
-        case (nfaD nfa Map.!? (q, a)) of
+        case nfaD nfa Map.!? (q, a) of
           Just statesForChar ->
             Set.foldr'
               ( Map.alter (Just . maybe (Set.singleton a) (Set.insert a))
@@ -410,8 +403,8 @@ instance (Show s, Show a, Ord s, Ord a) => Show (NFAL s a) where
       tell "  "
       tell $ show q
       if q `Set.member` nfalF nfal
-        then tell $ " [shape=doublecircle]"
-        else tell $ " [shape=circle]"
+        then tell " [shape=doublecircle]"
+        else tell " [shape=circle]"
       tell ";\n"
     forM_ (nfalQ nfal) $ \q -> do
       let outgoing = nfalOutgoing nfal q
@@ -436,8 +429,8 @@ instance (Show s, Show a, Ord s, Ord a) => Show (NFA s a) where
       tell "  "
       tell $ show q
       if q `Set.member` nfaF nfa
-        then tell $ " [shape=doublecircle]"
-        else tell $ " [shape=circle]"
+        then tell " [shape=doublecircle]"
+        else tell " [shape=circle]"
       tell ";\n"
     forM_ (nfaQ nfa) $ \q -> do
       let outgoing = nfaOutgoing nfa q
@@ -462,8 +455,8 @@ instance (Show s, Show a, Ord s, Ord a) => Show (DFA s a) where
       tell "  "
       tell $ show q
       if q `Set.member` dfaF dfa
-        then tell $ " [shape=doublecircle]"
-        else tell $ " [shape=circle]"
+        then tell " [shape=doublecircle]"
+        else tell " [shape=circle]"
       tell ";\n"
     forM_ (dfaQ dfa) $ \q -> do
       let outgoing = dfaOutgoing dfa q
@@ -489,8 +482,8 @@ main = do
     putStrLn "Where <format> is one of [re, nfal, nfa, dfa, mdfa]"
     exitFailure
 
-  let reStr = args !! 0
-  re <- case (parseStr reStr) of
+  let reStr = head args
+  re <- case parseStr reStr of
     Left errMsg -> do
       putStrLn $ "Could not parse the provided regex " ++ show reStr
       putStrLn $ "(Error: " ++ errMsg ++ ")"
@@ -507,4 +500,4 @@ main = do
     "nfa" -> show nfa
     "dfa" -> show dfa
     "mdfa" -> show mdfa
-    otherwise -> "Unknown format " ++ show (args !! 1)
+    _ -> "Unknown format " ++ show (args !! 1)
