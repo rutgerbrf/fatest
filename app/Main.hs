@@ -165,7 +165,7 @@ lStep nfal =
       ( \q ->
           let canReach = fromMaybe Set.empty $ nfalD nfal Map.!? (q, Nothing)
            in Set.insert q canReach
-          -- q can always reach it self with a lambda transition
+          -- q can always reach itself with a lambda transition
       )
 
 lMultiStep :: (Ord s, Ord a) => NFAL s a -> Set.Set s -> Set.Set s -> Set.Set s
