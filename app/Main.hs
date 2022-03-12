@@ -4,15 +4,21 @@ module Main where
 
 import Control.Applicative (Applicative (..))
 import Control.Monad (Monad (..))
+import Control.Monad.State.Lazy
+  ( MonadState (get, put),
+    State,
+    evalState,
+    forM_,
+    when,
+  )
 import Control.Monad.Writer.Lazy
   ( MonadWriter (tell),
     execWriter,
     forM_,
     when,
   )
-import Control.Monad.State.Lazy
-    ( forM_, when, MonadState(put, get), evalState, State )
 import Data.Bifunctor (first)
+import Data.Functor.Identity (Identity)
 import Data.List (foldl', intercalate)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -20,7 +26,6 @@ import qualified Data.Set as Set
 import System.Environment (getArgs, getProgName)
 import System.Exit (exitFailure)
 import Text.Lare (RE (..), parseStr)
-import Data.Functor.Identity (Identity)
 
 data DFA s a = DFA
   { dfaA :: Set.Set a,
@@ -215,7 +220,7 @@ type IntGenerator = State Int
 
 nextInt :: IntGenerator Int
 nextInt = do
-  current <- get 
+  current <- get
   put $ current + 1
   return current
 
@@ -463,13 +468,42 @@ instance (Show s, Show a, Ord s, Ord a) => Show (DFA s a) where
     tell $ show (dfaI dfa)
     tell ";\n}"
 
+data DFATable s a = DFATable {tabA :: [a], tabD :: [(s, [s])]}
+
+dfaTable :: (Ord s, Ord a) => DFA s a -> DFATable s a
+dfaTable dfa =
+  DFATable
+    { tabA = Set.toList $ dfaA dfa,
+      tabD =
+        map
+          ( \q ->
+              (q, map (\a -> dfaD dfa Map.! (q, a)) $ Set.toList $ dfaA dfa)
+          )
+          $ Set.toList $ dfaQ dfa
+    }
+
+instance (Show s, Show a) => Show (DFATable s a) where
+  show table = execWriter $ do
+    tell "\t"
+    forM_ (tabA table) $ \a -> do
+      tell $ show a
+      tell "\t"
+    tell "\n"
+    forM_ (tabD table) $ \(q, transitions) -> do
+      tell $ show q
+      tell "\t"
+      forM_ transitions $ \q' -> do
+        tell $ show q'
+        tell "\t"
+      tell "\n"
+
 main :: IO ()
 main = do
   args <- getArgs
   progName <- getProgName
   when (length args /= 2) $ do
     putStrLn $ "Expected exactly two arguments: " ++ progName ++ " <regex> <format>"
-    putStrLn "Where <format> is one of [re, nfal, nfa, dfa, mdfa]"
+    putStrLn "Where <format> is one of [re, nfal, nfa, dfa, mdfa, table]"
     exitFailure
 
   let reStr = head args
@@ -484,10 +518,12 @@ main = do
   let nfa = toNFA nfal
   let dfa = renumerateDFA $ toDFA nfa
   let mdfa = renumerateDFA $ minimizeDFA dfa
+  let table = dfaTable mdfa
   putStrLn $ case args !! 1 of
     "re" -> show re
     "nfal" -> show nfal
     "nfa" -> show nfa
     "dfa" -> show dfa
     "mdfa" -> show mdfa
+    "table" -> show table
     _ -> "Unknown format " ++ show (args !! 1)
